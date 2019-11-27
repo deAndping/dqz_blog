@@ -1,0 +1,24 @@
+1. create ephermeral
+
+2. Understand build context: build context is the directory where you issue a docker build command.
+
+3. Pipe Dockerfile through stdin 
+	commands like: docker build [OPTIONS] -
+
+4. Exclude with .dockerignore
+	To exclude files not relevant to the build.
+
+5. Don't install unnecessary package
+
+6. Sort multi-line arguments
+	use a space before a blackslash helps as well:
+		RUN apt-get update && apt-get install -y \
+			 bzr \
+		 	 cvs \
+		 	 git \
+			 mercurial \
+ 			 subversion
+
+7. Leverage build cache
+	When building an imag, Docker steps through the instructions in your file, executing 	each in the order specified. As each instruction is examined, Docker looks for an 		existing image in its cache that it can reuse, rather than creating a new (duplicate) 	image.
+	If you do not want to use the cache at all, you can use the "--no-cache=True" option on the docker build command.

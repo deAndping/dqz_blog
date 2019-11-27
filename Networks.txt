@@ -1,0 +1,7 @@
+Network drivers
+Dokcer 的网络子系统使用驱动器，是可插拔的。默认有几种驱动，提供主要的网络功能:
+1. bridge: 默认的网络驱动。 如果你不指定一个驱动，那么 bridge 就是你正创建的网络类型。当运行在单机上的应用需要交互时，Bridge是最常被使用的。
+2. host：对于单机里的容器，移除容器和 Docker host 之间的网络隔离并直接使用host 的网络，在 Docker 17.06及更高的版本，对于swarm 服务，host是唯一可依赖的方法。
+3. overlay：Overlay networks 连接多个 Docker daemons 并且是swarm 服务之间能够交互。你也可以用它来促进swarm服务和单机容器 或 两个运行在不同 Docker daemons 的单机容器 之间的交流。
+4. macvlan： macvlan networks 允许你分配 MAC 地址给容器，使其作为一台物理设备出现在你的网络中。
+5. none：这类容器不适用所有网络。通常使用于用户网络驱动中。none 不可用于 swarm service 中。

@@ -1,0 +1,17 @@
+In terms of Docker, a bridge network user a software bridge which allows containers connected to the same bridge network to communicate, while providing isolation from containers which are not connected to that bridge network. The Docker bridge driver automatically installs rules in the host machine so that containers on different bridge networks cannot communicate directly with each other.
+
+When you start Docker, a default bridge network (also called "bridge") is created automatically, and newly-started containers connect to it unless otherwise specified. You can also create user-defined custom bridge networks. User-defined bridge networks are superior to the default bridge network.
+
+Difference between user-defined bridges and the default bridge
+1. User-defined bridges provide better isolation and interoperability between contanerized applications.
+例：假设某个应用有一个web前端和数据库后端。web前端能够被外部访问，但只有后端才需要访问数据库。如果使用 user-defined bridge，那么只有 web 端口开放，而数据库并未开放给外部。但是若是使用 default bridge network，那么它会同时打开web端口和数据库端口，因此 Docker host 需要使用其他方法来关掉数据库端口的访问权限。
+2. User-defined bridges provide automatic DNS resolution between containers.
+使用 default bridge network 的容器只能通过 IP 地址来访问其他容器，除非你使用 --link 选项。但是在 user-defined bridge network中，容器可以通过彼此的名字来解决上述问题。
+3. Containers can be attached and detached from user-defined networks on the fly.
+在一个容器的生命周期中，你可以连接或者断掉连接 user-defined networks on the fly。但是若是要从 default bridge network 中移除容器你需要停止此容器并重新用不同的网络选项来创建它。
+4. Each user-defined network creates a configurable bridge.
+（If your containers use the default bridge network, you can configure it, but all the containers use the same settings, such as MTU and iptables rules. In addition, configuring the default bridge network happens outside of Docker itself, and requires a restart of Docker.
+
+User-defined bridge networks are created and configured using docker network create. If different groups of applications have different network requirements, you can configure each user-defined bridge separately, as you create it.）
+这点的解释不是很理解
+5. Linked containers on the default bridge network share environment variables.
