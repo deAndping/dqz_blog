@@ -1,0 +1,66 @@
+开始我的搜索之旅：
+当你已经将数据存入 Elasticsearch index 中时，你可以通过发送请求到 _search 终端来搜索它。
+
+例如，下面这个请求检索在 'bank' index 中的所有 document，并由 account number 排序。
+curl -XGET "localhost:9200/bank/_search?pretty" -H 'Content-Type: application/json' -d '
+{
+  "query": { "match_all": {} },
+  "sort": [
+    { "account_number": "asc" }
+  ]
+}'
+得到：
+{
+  "took" : 63,
+  "timed_out" : false,
+  "_shards" : {
+    "total" : 5,
+    "successful" : 5,
+    "skipped" : 0,
+    "failed" : 0
+  },
+  "hits" : {
+    "total" : {
+        "value": 1000,
+        "relation": "eq"
+    },
+    "max_score" : null,
+    "hits" : [ {
+      "_index" : "bank",
+      "_type" : "_doc",
+      "_id" : "0",
+      "sort": [0],
+      "_score" : null,
+      "_source" : {"account_number":0,"balance":16623,"firstname":"Bradshaw","lastname":"Mckenzie","age":29,"gender":"F","address":"244 Columbus Place","employer":"Euron","email":"bradshawmckenzie@euron.com","city":"Hobucken","state":"CO"}
+    }, {
+      "_index" : "bank",
+      "_type" : "_doc",
+      "_id" : "1",
+      "sort": [1],
+      "_score" : null,
+      "_source" : {"account_number":1,"balance":39225,"firstname":"Amber","lastname":"Duke","age":32,"gender":"M","address":"880 Holmes Lane","employer":"Pyrami","email":"amberduke@pyrami.com","city":"Brogan","state":"IL"}
+    }, ...
+    ]
+  }
+}
+其中：
+took —— Elasticsearch 搜索运行时间 ( in milliseconds )
+timed_out —— 请求是否超时
+_shards —— 有多少 shards 被搜索到，并分别展示有多少 shards 成功，失败和被跳过
+max_score —— 所搜索到的最相关的 document 的 score
+hits.total.value —— 有多少相匹配的 documents 被找到
+hits.sort —— document 的排序位置（当没有通过相关性 score 排序）
+hits._score —— document 的相关性 score （match_all 没被应用时）
+
+若想翻阅搜索结果（即对搜索结果进行分页），可以在请求中指定 from 和 size 参数。下面的搜索请求会得到 hits.sort 为 10 - 19 的搜索结果
+curl -X GET "localhost:9200/bank/_search?pretty" -H 'Content-Type: application/json' -d'
+{
+  "query": { "match_all": {} },
+  "sort": [
+    { "account_number": "asc" }
+  ],
+  "from": 10,
+  "size": 10
+}
+'
+
