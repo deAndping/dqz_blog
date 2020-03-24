@@ -116,3 +116,5 @@ GET /bank/_search
 
 除了上面这些基础的 bucketing 和 metrics 聚合，Elasticsearch 提供特定的聚合以操作多个域以及分析特殊形式的数据，如日期，IP地址和地理数据。
 
+
+
