@@ -1,0 +1,53 @@
+开始我的搜索之旅：
+
+若想在某个域中查找特定数据，你可以使用 match query。下面的语句展示了 request 通过查找 address 域来找到那些 addresses 包含 "mill" 或 "lane" 的顾客。
+GET /bank/_search
+{
+  "query": { "match": { "address": "mill lane" } }
+}
+
+你也可以使用 "match_phrase" 来进行语句搜索而不是仅匹配个别词。下面的 request 只匹配包含 "mill lane" 的 addresses。
+GET /bank/_search
+{
+  "query": { "match_phrase": { "address": "mill lane" } }
+}
+
+若想构造更复杂的 queries，你可以使用 bool query 去构建多个 query 规则。你可以指定以下规则：required（必须匹配）、desirable（应该匹配）、undesirable（非必要匹配）
+
+下面的 request 搜索 "bank" index以找到满足40岁但没有 ID 的顾客的账号。
+GET /bank/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "match": { "age": "40" } }
+      ],
+      "must_not": [
+        { "match": { "state": "ID" } }
+      ]
+    }
+  }
+}
+
+每个 "must"，"should" 和 "must_not" 元素都应在 Boolean query 中被指定为查询条款。
+一个 document 在 "must" 或 "should" 条款中的标准（即上例中的 {"age":"40"}）都会影响到这个 document 的相关性分数。分数越高，这个 document 的匹配程度越好。默认地，Elasticsearch 返回的 document 都会根据它们地相关性分数进行排序。
+
+在"must_not" 条款中的标准则被视为过滤器。它会影响到这个 document 是否被包含到结果中，但却不会影响到 documents 的分数。你也可以显式地指定通用过滤器去包含或派出基于结构性数据的 documents。
+例如，下面的 request 使用范围过滤器来限制结果，以使它返回的账号的 balance 在20000-30000之间。
+GET /bank/_search
+{
+  "query": {
+    "bool": {
+      "must": { "match_all": {} },
+      "filter": {
+        "range": {
+          "balance": {
+            "gte": 20000,
+            "lte": 30000
+          }
+        }
+      }
+    }
+  }
+}
+
