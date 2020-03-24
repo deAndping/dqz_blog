@@ -1,0 +1,118 @@
+Analyze results with aggregations
+
+Elasticsearch 聚合能够使你获得关于你搜索结果和问题回答的元数据。例如：“特斯拉有多少账户持有者？”或“在Tennessee中账户的平均余额是多少？”你可以查找 documents，过滤 hits，以及使用聚合来分析一条 request 的搜索结果。
+
+例如，下面这条 request 使用了 terms 聚合，通过 "state" 聚集 "bank" index 中的所有账户，并降序返回十个拥有最多账户的 states。
+GET /bank/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_state": {
+      "terms": {
+        "field": "state.keyword"
+      }
+    }
+  }
+}
+response 中的 buckets 是 state 域的值。 doc_count 展示了每个 state 的账户数量。例如，你可以看到 ID 有27个账户。因为 request 设置 size=0，这个 response 只能包含聚合结果。
+{
+  "took": 29,
+  "timed_out": false,
+  "_shards": {
+    "total": 5,
+    "successful": 5,
+    "skipped" : 0,
+    "failed": 0
+  },
+  "hits" : {
+     "total" : {
+        "value": 1000,
+        "relation": "eq"
+     },
+    "max_score" : null,
+    "hits" : [ ]
+  },
+  "aggregations" : {
+    "group_by_state" : {
+      "doc_count_error_upper_bound": 20,
+      "sum_other_doc_count": 770,
+      "buckets" : [ {
+        "key" : "ID",
+        "doc_count" : 27
+      }, {
+        "key" : "TX",
+        "doc_count" : 27
+      }, {
+        "key" : "AL",
+        "doc_count" : 25
+      }, {
+        "key" : "MD",
+        "doc_count" : 25
+      }, {
+        "key" : "TN",
+        "doc_count" : 23
+      }, {
+        "key" : "MA",
+        "doc_count" : 21
+      }, {
+        "key" : "NC",
+        "doc_count" : 21
+      }, {
+        "key" : "ND",
+        "doc_count" : 21
+      }, {
+        "key" : "ME",
+        "doc_count" : 20
+      }, {
+        "key" : "MO",
+        "doc_count" : 20
+      } ]
+    }
+  }
+}
+
+你可以构建聚合来更复杂地总结你的数据。例如，下面这条 request 在 group_by_state 聚合中嵌套了一条 avg 聚合，以计算每个 state 地平均账户余额。
+GET /bank/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_state": {
+      "terms": {
+        "field": "state.keyword"
+      },
+      "aggs": {
+        "average_balance": {
+          "avg": {
+            "field": "balance"
+          }
+        }
+      }
+    }
+  }
+}
+
+若不想通过计数来排序结果，你可以使用嵌套聚合的结果来进行排序，通过在 terms 聚合中指定顺序。
+GET /bank/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_state": {
+      "terms": {
+        "field": "state.keyword",
+        "order": {
+          "average_balance": "desc"
+        }
+      },
+      "aggs": {
+        "average_balance": {
+          "avg": {
+            "field": "balance"
+          }
+        }
+      }
+    }
+  }
+}
+
+除了上面这些基础的 bucketing 和 metrics 聚合，Elasticsearch 提供特定的聚合以操作多个域以及分析特殊形式的数据，如日期，IP地址和地理数据。
+
