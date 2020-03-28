@@ -1,0 +1,4 @@
+docker run [image-name]	运行镜像
+docker image ls		list 下载到你本机上的images
+docker ps --all		list 那些之前展示过信息的container
+

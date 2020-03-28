@@ -1,0 +1,32 @@
+以下为官方示例 node-bulletin-board 的 Dockerfile 解释
+
+# 使用官方镜像作为母镜像
+FROM node:current-slim
+
+# 设置工作目录
+WORKDIR /usr/src/app
+
+# 从你的主机复制文件到当前位置
+COPY package.json .
+
+# 在你的镜像文件系统内运行以下命令
+RUN npm install
+
+# 通知 Docker 容器运行时正在监听哪个端口
+EXPOSE 8080
+
+# 在容器内运行特定的命令
+CMD [ "npm", "start"]
+
+# 从你的主机复制剩下的源代码到你的镜像文件系统中
+COPY . .
+
+学会写一个 Dockerfile 是容器化一个应用的第一步。你可以认为这些 Dockerfile 命令是一步一步的构建你的镜像。
+下面解释示例的Dockerfile：
+1. "FROM node:current-slim"：从已经存在的 node:current-slim 镜像开始。这是一个官方镜像，由 node.js 供应商构建，并由 Docker 认证，最终成为一个高质量的容器化Node.js Long Term Support(LTS) 解释器和基础依赖包的镜像。
+2. "WORKDIR /usr/src/app"：使用 WORKDIR 来指定接下来的所有行为都应在目录 /usr/src/app 中进行，此目录在你的镜像文件系统内（而不是你的主机文件系统）
+3. "COPY package.json"：从你的主机复制 "package.json" 到你的镜像的当前位置中（即 "/usr/src/app/package.json"）
+4. "RUN npm install"：在你的镜像文件系统内运行 npm install 命令（这个文件系统会读取 package.json 以确认你的 app 的 node 依赖包，并安装它们）
+5. "COPY . ."：从你的主机中复制剩余的你的 app 源代码到你的镜像文件系统中。
+6. CMD 指令是教你在镜像中指定一些元数据的第一个例子，它描述了如何基于此镜像来运行一个容器。在这个例子中，它是指这个镜像支持的容器化过程是 npm start。
+7. "EXPOSE 8080" 告诉Docker 这个容器在运行时监听 8080 端口。
