@@ -2,3 +2,13 @@ docker run [image-name]	运行镜像
 docker image ls		list 下载到你本机上的images
 docker ps --all		list 那些之前展示过信息的container
 
+例：
+docker run --publish 8000:8080 --detach --name bb bulletinboard:1.0		基于你的镜像来启动一个容器（镜像：bulletinboard:1.0；容器：bb）
+参数解释：
+--publish 告诉 Docker 将来自主机8000端口的流量转发到容器端口8080。容器们拥有属于自己的私有的一套端口，如果你想要从网络到达某一个容器，你就必须使用这种方式转发流量，否则，防火墙会组织所有试图接近你的容器的网络流量，作为一种默认的安全措施。
+--detach 告诉 Docker 在后台运行此容器
+--name 指定了一个名字，在接下来的命令中你可以用这个名字来指定容器。
+
+docker rm --force bb	删除容器
+参数解释：
+--force 移除正在运行的容器。如果你使用 docker stop bb，你可以不用 --force 选项
