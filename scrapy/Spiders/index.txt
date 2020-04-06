@@ -1,0 +1,9 @@
+Spiders 是一些定义了如何 "刮" 一个特定的网站（或一些网站）的类，包括如何执行 "爬行"（如链接）喝如何从这些页面中提取结构性数据（即 "刮" 数据）。换句话说，Spiders 就是你为 "刮" 和解析一个特殊的网站定义定制化行为的地方。
+
+对于 Spider来说，爬取周期是这样的：
+1. 通过生成最初的请求来爬取第一个 URLs，然后指定一个 callback 函数来 response 这些请求下载好的内容。
+2. 在 callback 函数中，你可以解析 response （网页）并返回 被提取数据的字典、 Item 对象、Request 对象或这些对象的迭代。这些请求也会包含一个 callback 然后继续被 Scrapy 下载，接着这些 response 会由特定的 callback 处理。
+3. 在 callback 函数中，你可以解析页面内容，典型的就是使用 Selectors 并生成含有解析数据的 items。
+4. 最后，返回给 Spider 的 items 会被持久化到数据库或使用 Feed exports 写进文件中。
+
+这个爬取周期被应用于任何种类的 spider。

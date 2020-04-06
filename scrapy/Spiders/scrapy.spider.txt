@@ -1,0 +1,55 @@
+class scrapy.spiders.Spider
+这是最简单的爬虫，且其他的每个 spider 都必须继承它。它没有任何功能性的特殊之处，它只提供默认的 start_requests() 实现方式，这个函数向属性 start_urls 发送请求，然后为每个结果响应调用方法 parse() 。
+
+name：
+	爬虫的名字。字符串编码。爬虫名字是 Scrapy 定位爬虫的方式，因此它必须是唯一的。然而，这并不会阻止你为同一个 spider 实例化多个个体。这个爬虫属性是最重要的。
+	如果爬虫只爬取一个网站（domain不好翻），最佳方案是将这个	爬虫命名为所爬取的网站。比如说，要爬取 mywebsite.com，那么将爬虫命名为 mywebsite。
+
+allowed_domains：
+	一个可选的字符串列表。包含了爬虫爬取的网站（domains）。如果 OffsiteMiddleware 是 enabled，那么不在这个列表中的 URLs 的请求将不被爬取。
+
+start_urls：
+	爬虫开始爬取的 URLs 列表。
+
+custom_settings：
+	设置字典。它将会在运行爬虫时被项目配置重写。当设置在实例化之前被更新时，它必须被定义为一个 class。
+
+crawler：
+	在实例化 类 之后，此属性由 from_crawler() 方法设置 并连接到 Crawler 对象上。
+
+settings：
+	运行爬虫的配置。这是一个 Settings 实例。
+
+logger：
+	Python logger。你可以用它来发送日志信息。
+
+from_crawler(crawler, *args, **kwargs)
+	这是类成员方法，Scrapy 用它来产生你的爬虫。
+	你可能不需要直接覆盖它，因为它默认的实现是作为 __init__() 方法的代理（proxy）。使用给定的 args 和 kwargs 变量调用它。
+	不管怎样，这个方法在新实例设置 crawler 和 settings 属性。
+	参数：crawler（crawler实例）—— 爬虫绑定的 crawler，args（list）——传给 __init__() 方法的参数。kwargs（dict）——传给 __init__()方法的关键参数。
+
+start_requests()：
+	这个方法必须为爬虫返回第一个请求的可迭代内容来进行爬取。在爬虫打开后，Scrapy 会调用且只调用一次这个函数，因此，将 start_requets() 作为生成器是安全的。
+	默认的实现方式为每个在 start_urls 内的 url 生成 Request(url, dont_filter=True)。
+	如果你想改变用于开始爬取网站的请求，你需要覆盖此方法。比如说，如果在一个POST 请求中，你想由log开始，你可以这样做：
+class MySpider(scrapy.Spider):
+    name = 'myspider'
+
+    def start_requests(self):
+        return [scrapy.FormRequest("http://www.example.com/login",
+                                   formdata={'user': 'john', 'pass': 'secret'},
+                                   callback=self.logged_in)]
+
+    def logged_in(self, response):
+        # here you would extract links to follow and return Requests for
+        # each of them, with another callback
+        pass
+
+parse(response)：
+	这是Scrapy处理已下载的 responses 默认的 callback，当这些 responses 没有指定 callback时。
+	parse 方法掌握处理 response 、返回爬取数据和跟踪 URLs。其他请求的 callbacks 也有相同需求。
+	这个方法和其他请求 callback 必须返回可迭代的 Request 字典或 Item 对象。
+
+closed(reason)：
+	爬虫结束时调用。这个方法为 spider_closed 信号传递给 signals.connect() 提供了快捷方式。
