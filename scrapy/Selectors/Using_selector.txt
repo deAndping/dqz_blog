@@ -1,0 +1,130 @@
+Using selectors
+示例代码：
+<html>
+ <head>
+  <base href='http://example.com/' />
+  <title>Example website</title>
+ </head>
+ <body>
+  <div id='images'>
+   <a href='image1.html'>Name: My image 1 <br /><img src='image1_thumb.jpg' /></a>
+   <a href='image2.html'>Name: My image 2 <br /><img src='image2_thumb.jpg' /></a>
+   <a href='image3.html'>Name: My image 3 <br /><img src='image3_thumb.jpg' /></a>
+   <a href='image4.html'>Name: My image 4 <br /><img src='image4_thumb.jpg' /></a>
+   <a href='image5.html'>Name: My image 5 <br /><img src='image5_thumb.jpg' /></a>
+  </div>
+ </body>
+</html>
+
+首先，打开shell并输入下面的命令：
+scrapy shell https://docs.scrapy.org/en/latest/_static/selectors-sample1.html
+在shell加载好后，你会得到一个可用的response，并且你可以使用response.selector 与 selector 交互。
+
+让我们先构造一个XPath来选择title标签内的文本：
+>>> response.xpath('//title/text()')
+[<Selector xpath='//title/text()' data='Example website'>]
+若想得到文本数据，你可以调用 .get() 或 .getall() 方法。如：
+>>> response.xpath('//title/text()').getall()
+['Example website']
+>>> response.xpath('//title/text()').get()
+'Example website'
+
+注意 CSS 选择器也可以使用 CSS3 伪代码来选择文本或属性值：
+>>> response.css('title::text').get()
+'Example website'
+
+可以看到，.xpath() 和 .css() 方法返回一个 SelectorList 实例，此实例是新选择器列表。这个API 能用于快速选择内嵌数据。
+>>> response.css('img').xpath('@src').getall()
+['image1_thumb.jpg',
+ 'image2_thumb.jpg',
+ 'image3_thumb.jpg',
+ 'image4_thumb.jpg',
+ 'image5_thumb.jpg']
+
+如果你只想提取一条匹配元素，你可以调用 .get()（同 .extract_first()）。
+>>> response.xpath('//div[@id="images"]/a/text()').get()
+'Name: My image 1 '
+
+你也可以修改默认返回值
+>>> response.xpath('//div[@id="not-exists"]/text()').get(default='not-found')
+'not-found'
+
+除了使用 '@src' 的XPath 方式外，Selector 的 .attrib 也可用：
+>>> [img.attrib['src'] for img in response.css('img')]
+['image1_thumb.jpg',
+ 'image2_thumb.jpg',
+ 'image3_thumb.jpg',
+ 'image4_thumb.jpg',
+ 'image5_thumb.jpg']
+
+.attrib 直接使用的话只会返回第一个匹配到的元素：
+>>> response.css('img').attrib['src']
+'image1_thumb.jpg'
+
+CSS Selectors 扩展
+1. 选择文本结点，使用 ::text
+2. 选择属性值，使用 ::attr(name)，name 是你想要的属性的名字。
+如：
+1. title::text选择下面的一个<title>元素的子文本结点。
+>>> response.css('title::text').get()
+'Example website'
+
+2. *::text 选择当前选择器内所有后续的文本结点。
+>>> response.css('#images *::text').getall()
+['\n   ',
+ 'Name: My image 1 ',
+ '\n   ',
+ 'Name: My image 2 ',
+ '\n   ',
+ 'Name: My image 3 ',
+ '\n   ',
+ 'Name: My image 4 ',
+ '\n   ',
+ 'Name: My image 5 ',
+ '\n  ']
+
+3. foo::text 返回空如果 foo 元素存在，但是不包含文本，所以在使用 .get() 时要注意是否添加默认值。
+>>> response.css('img::text').getall()
+[]
+>>> response.css('img::text').get()
+>>> response.css('img::text').get(default='')
+
+4. a::attr(href) 选择后续链接的 href 属性值：
+>>> response.css('a::attr(href)').getall()
+['image1.html',
+ 'image2.html',
+ 'image3.html',
+ 'image4.html',
+ 'image5.html']
+
+下面是一些实例，可以体会以下：
+>>> response.xpath('//base/@href').get()
+'http://example.com/'
+>>> response.css('base::attr(href)').get()
+'http://example.com/'
+>>> response.css('base').attrib['href']
+'http://example.com/'
+>>> response.xpath('//a[contains(@href, "image")]/@href').getall()
+['image1.html',
+ 'image2.html',
+ 'image3.html',
+ 'image4.html',
+ 'image5.html']
+>>> response.css('a[href*=image]::attr(href)').getall()
+['image1.html',
+ 'image2.html',
+ 'image3.html',
+ 'image4.html',
+ 'image5.html']
+>>> response.xpath('//a[contains(@href, "image")]/img/@src').getall()
+['image1_thumb.jpg',
+ 'image2_thumb.jpg',
+ 'image3_thumb.jpg',
+ 'image4_thumb.jpg',
+ 'image5_thumb.jpg']
+>>> response.css('a[href*=image] img::attr(src)').getall()
+['image1_thumb.jpg',
+ 'image2_thumb.jpg',
+ 'image3_thumb.jpg',
+ 'image4_thumb.jpg',
+ 'image5_thumb.jpg']

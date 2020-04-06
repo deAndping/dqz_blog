@@ -1,0 +1,6 @@
+Selectors
+当你爬取网页时，你最经常做的就是从HTML源码中提取数据了。这儿有几种可用的库能帮你做到这个。比如说：
+1. BeautifulSoup 是一个非常流行的网页爬取库，Python 程序员们基于HTML代码的结构构建了Python对象并能合理地处理那些坏 markup。它的缺点就是慢。
+2. lxml 是一个 XML 解析库，基于 ElementTree。
+
+XPath 是一门语言，用于选择 XML documents中的结点。XML documents也可用HTML编写。
