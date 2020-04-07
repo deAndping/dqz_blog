@@ -1,0 +1,17 @@
+Declaring_Items
+Items 可以使用简单的类定义语法和 Field 对象来声明。如：
+
+import scrapy
+class Product(scrapy.Item):
+    name = scrapy.Field()
+    price = scrapy.Field()
+    stock = scrapy.Field()
+    tags = scrapy.Field()
+    last_updated = scrapy.Field(serializer=str)
+
+Items Fields
+Field 对象被用来指定每个field 的元数据。如，上面的例子中，serializer 函数用于 last_updated field。
+
+你可以为每个field指定任何种类的元数据。Field 对象没有任何值限制。也因为这个原因，没有所有可用元数据key的可参考列表。在 Field 对象中定义的每个key 可以由不同组件使用，且只有那些组件知道它。你也可以在你的项目中定义并使用任何其他的 Field key，以供你的需求。Field 对象的主要目标是提供一个可以在一个地方定义所有 field 元数据的方式。特别的，那些行为取决于每个field的组件使用特定的field keys 来配置那种行为。你必须参考他们的文档来确定每个组件使用了那些元数据key。
+
+需要注意的是，用于声明 item 的Field 对象不会作为类属性保留分配。
