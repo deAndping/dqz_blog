@@ -373,3 +373,298 @@ static void rehash (lua_State *L, Table *t, const TValue *ek) {
 }
 
 ```
+总结下 rehash 的主要工作：统计当前 table 中到底有多少有效 k-v 对，以及决定数组部分需要开辟多少空间。其原则是最终数组部分的利用率需要超过50%。
+lua 在 rehash 函数中定义在栈上的 nums 数组来做这个整数 key 统计工作。这个数组按 2 的整数幂次来分开统计各个区间的整数 key 个数。统计过程详见 numusearray 和 numusehash。其中 numusearray 是用来统计数组部分的整数 key 数量，numusehash 是用来统计散列部分的整数 key 及所有 key 的总数量。
+最终，computesizes 计算出不低于 50% 利用率下数组部分该维持多少空间。同时，还可以得到有多少有效 key 将会被存放到散列表里。
+根据这些统计数据，rehash 函数调用 luaH_resize 这个 api 来重新调整数组部分和散列部分的大小，并把不能放在数组里的 k-v 对重新塞入到散列表中。
+
+查询操作 luaH_get 的实现要简单得多。当查询 key 为整数 key 且在数组范围内时，在数组部分查询；否则，根据 key 的哈希值去散列表中查询。拥有相同哈希值的冲突 k-v 对，在散列表中由 Node 的 next 域单项链起来，所以遍历这个链表即可。
+```
+const TValue *luaH_getint (Table *t, lua_Integer key) {
+  lua_Unsigned alimit = t->alimit;
+  if (l_castS2U(key) - 1u < alimit)  /* 'key' 在数组部分？ */
+    return &t->array[key - 1];
+  else if (!isrealasize(t) &&  /* alimit 不是数组部分的实际大小，数组部分的实际大小为大于t的最小2的整数次幂 */
+           (((l_castS2U(key) - 1u) & ~(alimit - 1u)) < alimit)) {
+    t->alimit = cast_uint(key);  /* 此时 #t == t->alimit */
+    return &t->array[key - 1];
+  }
+  else {  /* key 不在数组部分中，从哈希表里查找 */
+    Node *n = hashint(t, key);
+    for (;;) {  /* 检查 key 是否在链表里 */
+      if (keyisinteger(n) && keyival(n) == key)
+        return gval(n);  /* 找到了 */
+      else {
+        int nx = gnext(n);
+        if (nx == 0) break;
+        n += nx;
+      }
+    }
+    return &absentkey;  // 没找到，返回 absentkey
+  }
+}
+
+const TValue *luaH_get (Table *t, const TValue *key) {
+  switch (ttypetag(key)) {
+    case LUA_VSHRSTR: return luaH_getshortstr(t, tsvalue(key));
+    case LUA_VNUMINT: return luaH_getint(t, ivalue(key));
+    case LUA_VNIL: return &absentkey;
+    case LUA_VNUMFLT: {
+      lua_Integer k;
+      if (luaV_flttointeger(fltvalue(key), &k, F2Ieq)) /* integral index? */
+        return luaH_getint(t, k);  /* use specialized version */
+      /* else... */
+    }  /* FALLTHROUGH */
+    default:
+      return getgeneric(t, key, 0);
+  }
+}
+```
+
+以短字符串为 key 也十分常见，lua对此进行了一些优化。
+对短于LUAI_MAXSHORTLEN（默认设置为40字节）的短字符串会做内部唯一化处理。相同的字符串在同一个 State 中只会存在一份。这可以简化字符串的比较操作。
+长字符串并不做内部唯一化，且其哈希值也是惰性计算的。在上面列出的 mainpositionTV 函数中可以看到它是通过 luaS_hashlongstr 来进行惰性计算的。
+```
+unsigned int luaS_hashlongstr (TString *ts) {
+  lua_assert(ts->tt == LUA_VLNGSTR);
+  if (ts->extra == 0) {  /* 还没哈希过？ */
+    size_t len = ts->u.lnglen;
+    ts->hash = luaS_hash(getlngstr(ts), len, ts->hash);
+    ts->extra = 1;  /* 标识现在已经过了 */
+  }
+  return ts->hash;
+}
+```
+
+从 luaH_get 的实现中可以看到，遇到短字符串查询时，就会去调用 luaH_getshortstr 回避逐字节的字符串比较操作。
+```
+/* 因为短字符串已经被内部唯一化了，只需确认类型为短字符串，再比较两者是否一致即可 */
+#define eqshrstr(a,b)	check_exp((a)->tt == LUA_VSHRSTR, (a) == (b))
+
+const TValue *luaH_getshortstr (Table *t, TString *key) {
+  Node *n = hashstr(t, key);
+  lua_assert(key->tt == LUA_VSHRSTR);
+  for (;;) {  /* 检查字符串是否在链中 */
+    if (keyisshrstr(n) && eqshrstr(keystrval(n), key))
+      return gval(n);  /* 找到了 */
+    else {
+      int nx = gnext(n);
+      if (nx == 0)
+        return &absentkey;  /* 没找到 */
+      n += nx;
+    }
+  }
+}
+```
+
+在Lua中，并没有提供一个自维护状态的迭代器，而是给出了一个 next 方法。传入上一个 key，返回下一个 k-v 对，这就是 luaH_next 要实现的。
+```
+/*
+** 返回 'key' 在table中的索引。首先现在数组部分遍历，没找到再遍历哈希表。
+*/
+static unsigned int findindex (lua_State *L, Table *t, TValue *key,
+                               unsigned int asize) {
+  unsigned int i;
+  if (ttisnil(key)) return 0;  /* 第一次迭代，如果 key 是 nil，则返回 */
+  i = ttisinteger(key) ? arrayindex(ivalue(key)) : 0;   // key 是整数？且 key 是否在数组索引范围内？（即[1, MAXASIZE]）是的话返回 key 对应的数组索引
+  if (i - 1u < asize)  /* 'key' 在数组部分？ */
+    return i;  /* 是的话直接返回 i */
+  else {  // key 在哈希表里
+    const TValue *n = getgeneric(t, key, 1);
+    if (l_unlikely(isabstkey(n)))
+      luaG_runerror(L, "invalid key to 'next'");  /* key not found */
+    i = cast_int(nodefromval(n) - gnode(t, 0));  /* key 的索引在哈希表中 */
+    /* 哈希表在数组部分后，故索引需要加上数组部分大小 */
+    return (i + 1) + asize;
+  }
+}
+
+int luaH_next (lua_State *L, Table *t, StkId key) {
+  unsigned int asize = luaH_realasize(t);
+  unsigned int i = findindex(L, t, s2v(key), asize);  /* 找到对应索引 */
+  for (; i < asize; i++) {  /* 从数组部分开始 */
+    if (!isempty(&t->array[i])) {  /* 非空元素 */
+      setivalue(s2v(key), i + 1);
+      setobj2s(L, key + 1, &t->array[i]);
+      return 1;
+    }
+  }
+  for (i -= asize; cast_int(i) < sizenode(t); i++) {  /* 哈希表 */
+    if (!isempty(gval(gnode(t, i)))) {  /* 非空元素 */
+      Node *n = gnode(t, i);
+      getnodekey(L, s2v(key), n);
+      setobj2s(L, key + 1, gval(n));
+      return 1;
+    }
+  }
+  return 0;  /* no more elements */
+}
+```
+它尝试返回传入的 key 在数组部分中的下一个非空值。当超出数组部分时，会去检索哈希表中的对应位置，并返回哈希表中对应节点在储存空间上的下一个节点处的 k-v 对。
+
+lua 的 table 长度定义只对序列表有效。所以，在实现的时候，仅需要遍历 table 的数组部分。只有当数组部分填满时才需要进一步的去检索哈希表。它使用二分法，来快速在哈希表中快读定位一个非空的整数 key 的位置。
+```
+static unsigned int binsearch (const TValue *array, unsigned int i,
+                                                    unsigned int j) {
+  while (j - i > 1u) {  /* binary search */
+    unsigned int m = (i + j) / 2;
+    if (isempty(&array[m - 1])) j = m;
+    else i = m;
+  }
+  return i;
+}
+
+/*
+** 检查数组的真实大小是否为2的整数次幂，如果不是，在未改变其真实大小时，'alimit' 不能被改为其他值
+*/
+static int ispow2realasize (const Table *t) {
+  return (!isrealasize(t) || ispow2(t->alimit));
+}
+
+/*
+** 在哈希表中找到 table 't' 的边界。首先能确定的是，j 为 0 或者 'j' 和 'j+1' 都在表里。
+** 我们需要找到一个更大的 key，它不在表里。那么我们就可以在这两个 key 内做二分查找来找到一个边界。
+** 因此，可以先对 j 进行翻倍，知道找到一个不在表里的索引，如果翻倍后的 j 溢出，就使用 LUA_MAXINTEGER。
+** 如果它不在表里，就可以开始做二分查找了。（'j'，作为最大的整数，'j' > 'i'，且 'j' ~= 'i'，因为 'i' 存在于表里。）
+** 最终得到的结果 'j' 就是一个边界。
+*/
+static lua_Unsigned hash_search (Table *t, lua_Unsigned j) {
+  lua_Unsigned i;
+  if (j == 0) j++;  /* 调用这个函数需要确保 'j + 1' 在表里 */
+  do {
+    i = j;  /* 'i' 是一个在表里的索引 */
+    if (j <= l_castS2U(LUA_MAXINTEGER) / 2)
+      j *= 2;
+    else {
+      j = LUA_MAXINTEGER;
+      if (isempty(luaH_getint(t, j)))  /* t[j] 不在表里？ */
+        break;  /* 'j' 已经是一个空 key 了 */
+      else  /* 特殊情况 */
+        return j;  /* 最大整数肯定就是边界了 */
+    }
+  } while (!isempty(luaH_getint(t, j)));  /* 循环直至 t[j] 不在表中 */
+  /* i < j  &&  t[i] 存在  &&  t[j] 不存在 */
+  while (j - i > 1u) {  /* 做二分查找 */
+    lua_Unsigned m = (i + j) / 2;
+    if (isempty(luaH_getint(t, m))) j = m;
+    else i = m;
+  }
+  return i;
+}
+
+/*
+** 尝试找到 table 't' 的边界. (边界指的是一个整数索引 i，t[i] 存在而 t[i+1] 为空，如果 t[1] 没有则为0）
+** (后续的解释会使用 Lua 索引，即以 1 开头，代码则会以 0 开头来索引表的数组部分)
+** 代码会以 'limit = t->alimit' 开始，因为 'alimit' 最有可能是边界。
+**
+** (1) 如果 't[limit]' 为空, 边界肯定在 limit 之前。比如说：'t[#t] = nil'，那么检查 'limit-1'存不存在，
+** 存在的话，它就是一个边界。否则，在 [0, limit)内做二分查找来找到边界。这两种情况下，将此边界作为新的 'alimit'，来指引下一次调用 next 函数。
+**
+** (2) 如果 't[limit]' 非空， 且在 'limit' 后还有数组元素，尝试找到一个边界。
+** 首先，先尝试特殊情况，如 'limit+1' 是空的，那么 'limit' 就是一个边界。
+** 否则，检查数组部分的最后一个元素，如果它是空的，那么边界肯定在 'limit' 和最后一个元素之间，使用二分查找找到它，找到的结果会变为新的 limit。
+**
+** (3) 最后一种情况是数组部分没有元素（limit = 0）或最后一个元素存在。这种情况下，需要检索哈希部分。如果没有哈希部分或者 'limit+1' 不存在，'limit' 就是边界。
+** 否则，调用 'hash_search' 来找到哈希表的边界。这些情况下，边界不在数组部分内，因此不能作为一个新的 limit。
+*/
+lua_Unsigned luaH_getn (Table *t) {
+  unsigned int limit = t->alimit;
+  if (limit > 0 && isempty(&t->array[limit - 1])) {  /* limit 索引没有元素 */
+    /* limit 前肯定有一个边界 */
+    if (limit >= 2 && !isempty(&t->array[limit - 2])) {
+      /* 'limit - 1' 非空，那么它是一个边界; 那么它可以当作 limit 吗? */
+      if (ispow2realasize(t) && !ispow2(limit - 1)) {
+        t->alimit = limit - 1;
+        setnorealasize(t);  /* 现在 'alimit' 并不表示真实大小 */
+      }
+      return limit - 1;
+    }
+    else {  /* 必须在 [0, limit] 区间内找到一个边界 */
+      unsigned int boundary = binsearch(t->array, 0, limit);
+      /* 找到的边界可以表示为数组的真实大小吗？ */
+      if (ispow2realasize(t) && boundary > luaH_realasize(t) / 2) {
+        t->alimit = boundary;  /* 将其设为新的 limit */
+        setnorealasize(t);
+      }
+      return boundary;
+    }
+  }
+  /* 'limit' 为 0 或者table 里有 */
+  if (!limitequalsasize(t)) {  /* (2)? */
+    /* 'limit' > 0 且 'limit' 后还有很多数组部分元素 */
+    if (isempty(&t->array[limit]))  /* 'limit + 1' 上没有元素 */
+      return limit;  /* 这就是边界 */
+    /* 否则，使用数组的最后一个元素 */
+    limit = luaH_realasize(t);
+    if (isempty(&t->array[limit - 1])) {  /* 'limit-1' 为空？ */
+      /* 那么肯定有一个边界在老 limit 后，且它是一个合法的新 limit
+         and it must be a valid new limit */
+      unsigned int boundary = binsearch(t->array, t->alimit, limit);
+      t->alimit = boundary;
+      return boundary;
+    }
+  }
+  /* (3) 'limit' 是最后一个元素且为 0，或者在 table 里有 */
+  lua_assert(limit == luaH_realasize(t) &&
+             (limit == 0 || !isempty(&t->array[limit - 1])));
+  if (isdummy(t) || isempty(luaH_getint(t, cast(lua_Integer, limit + 1))))
+    return limit;  /* 'limit + 1' 不存在 */
+  else  /* 'limit + 1' 存在 */
+    return hash_search(t, limit);
+}
+```
+
+Lua实现复杂数据结构，大量依赖给 table 附加一个元表（metatable）来实现，故而 table 本身的一大作用就是作为元表存在。查询元表中是否存在一个特定的元方法就很容易成为运行期效率的热点。如果不能高效的解决这个热点，每次对带有元表的 table 的操作，都需要至少多做一次 hash查询。但是并非所有元表都提供了元方法的，对于不存在的元方法查询就是一个浪费了。
+Table 结构中有一个 flags 域，它记录了哪些元方法不存在。
+```
+/*
+** Clear all bits of fast-access metamethods, which means that the table
+** may have any of these metamethods. (First access that fails after the
+** clearing will set the bit again.)
+*/
+#define invalidateTMcache(t)	((t)->flags &= ~maskflags)
+```
+这个宏用来在 table 被修改时，清空这组标记位，强迫重新做元方法查询。只要充当元表的 table 没有被修改，缺失元方法的查询结果就可以缓存在这组标记位中了。
+
+```
+#define gfasttm(g,et,e) ((et) == NULL ? NULL : \
+  ((et)->flags & (1u<<(e))) ? NULL : luaT_gettm(et, e, (g)->tmname[e]))
+```
+
+我们可以看到 fasttm这个宏能够快速的剔除不存在的元方法。
+另一个优化点是，不必在每次做元方法查询的时候都压入元方法的名字。在state 初始化时，lua 对这些元方法生成了字符串对象：
+```
+void luaT_init (lua_State *L) {
+  static const char *const luaT_eventname[] = {  /* ORDER TM */
+    "__index", "__newindex",
+    "__gc", "__mode", "__len", "__eq",
+    "__add", "__sub", "__mul", "__mod", "__pow",
+    "__div", "__idiv",
+    "__band", "__bor", "__bxor", "__shl", "__shr",
+    "__unm", "__bnot", "__lt", "__le",
+    "__concat", "__call", "__close"
+  };
+  int i;
+  for (i=0; i<TM_N; i++) {
+    G(L)->tmname[i] = luaS_new(L, luaT_eventname[i]);
+    luaC_fix(L, obj2gco(G(L)->tmname[i]));  /* never collect these names */
+  }
+}
+```
+这样，在 table 查询这些字符串要比我们使用 lua_getfield 这样的外部 api 要快得多。通过调用 luaT_gettmbyobj 可以获得需要的元方法。
+```
+const TValue *luaT_gettmbyobj (lua_State *L, const TValue *o, TMS event) {
+  Table *mt;
+  switch (ttype(o)) {
+    case LUA_TTABLE:
+      mt = hvalue(o)->metatable;
+      break;
+    case LUA_TUSERDATA:
+      mt = uvalue(o)->metatable;
+      break;
+    default:
+      mt = G(L)->mt[ttype(o)];
+  }
+  return (mt ? luaH_getshortstr(mt, G(L)->tmname[event]) : &G(L)->nilvalue);
+}
+```
